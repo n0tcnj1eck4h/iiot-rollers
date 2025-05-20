@@ -1,0 +1,9 @@
+[package]
+name = "rollers"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rppal = "0.22.1"
+rumqttc = "0.24.0"
+tokio = { version = "1.45.0", features = ["rt", "macros", "rt-multi-thread", "sync"] }
