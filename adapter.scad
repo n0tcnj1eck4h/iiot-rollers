@@ -4,7 +4,7 @@ translate([0,0,-7])
 linear_extrude(7)
 difference(){
     circle(4);
-    circle(1.5);
+    circle(1.5 + 0.2);
 }
 
 linear_extrude(10)
@@ -12,7 +12,7 @@ linear_extrude(10)
 difference(){
     circle(4);
     intersection(){
-        circle(3);
-        translate([1.5,0,0]) square(6, center=true);
+        circle(3 + 0.1);
+        translate([1.5 - 0.1,0,0]) square(6, center=true);
     }
 }
