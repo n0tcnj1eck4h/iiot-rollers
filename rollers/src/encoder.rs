@@ -22,6 +22,13 @@ static COUNTER: AtomicI32 = AtomicI32::new(0);
 static CLK_STATE: AtomicBool = AtomicBool::new(false);
 static DT_STATE: AtomicBool = AtomicBool::new(false);
 
+pub fn reset_encoder_count() {
+    COUNTER.store(0, Ordering::Relaxed);
+}
+pub fn get_encoder_count() -> i32 {
+    COUNTER.load(Ordering::Relaxed)
+}
+
 pub fn handle_encoder_interrupt(pin: EncoderPin, event: Event) {
     use EncoderPin::*;
     use Trigger::FallingEdge;
@@ -48,6 +55,5 @@ pub fn handle_encoder_interrupt(pin: EncoderPin, event: Event) {
     CLK_STATE.store(new_clk, Ordering::Relaxed);
     DT_STATE.store(new_dt, Ordering::Relaxed);
 
-    let uh = COUNTER.fetch_add(increment, Ordering::Relaxed) / 4;
-    println!("{}", uh);
+    COUNTER.fetch_add(increment, Ordering::Relaxed);
 }
