@@ -17,8 +17,6 @@ difference(){
 translate([0,0,2])
 linear_extrude(6)
 difference(){
-    //circle(7 / 2);
-    //circle(3.4 / 2 -0.1);
     circle(5);
     circle(3.3 + 0.2);
 }

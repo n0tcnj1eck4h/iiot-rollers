@@ -5,103 +5,42 @@ use std::{error::Error, thread, time::Duration};
 
 use encoder::{EncoderPin, handle_encoder_interrupt};
 use rppal::gpio::{Gpio, Trigger};
+use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use tokio::{io::AsyncBufReadExt, sync::mpsc::channel, time::sleep};
 
 use crate::{
     encoder::{get_encoder_count, reset_encoder_count},
     motor::Motor,
 };
 
-const COMMAND_TOPIC: &str = "home/shutter/set/perentage";
-const STATUS_TOPIC: &str = "home/shutter/status";
+const COMMAND_TOPIC: &str = "shutters/desired";
+const STATUS_TOPIC: &str = "shutters/status";
 
-const CLIENT_ID: &str = "rumqtt-async";
-const HOST: &str = "test.mosquitto.org";
+const CLIENT_ID: &str = "apparatus";
+const HOST: &str = "localhost";
 const PORT: u16 = 1883;
 
-// async fn command_reciever(mut event_loop: EventLoop) {
-//     loop {
-//         while let Ok(notification) = event_loop.poll().await {
-//             println!("Received = {:?}", notification);
-//         }
-//         println!("Connection lost. Reconnecting...");
-//     }
-// }
-
-// async fn blink_task() {
-//     loop {
-//         println!("On...");
-//         tx.send(MotorState::Open).await.unwrap();
-//         time::sleep(Duration::from_millis(500)).await;
-//         println!("Off...");
-//         tx.send(MotorState::Stop).await.unwrap();
-//         time::sleep(Duration::from_millis(500)).await;
-//     }
-// }
+enum MotorCommand {
+    Go(i32),
+    Calibrate,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let gpio = Gpio::new().unwrap();
 
+    // Motor Controller
     let mut motor = Motor {
         a: gpio.get(12)?.into_output_low(),
         b: gpio.get(13)?.into_output_low(),
     };
     motor.stop();
 
-    let mut clk = gpio.get(2)?.into_input();
-    let mut dt = gpio.get(3)?.into_input();
-
-    // let mut mqttoptions = MqttOptions::new(CLIENT_ID, HOST, PORT);
-    // mqttoptions.set_keep_alive(Duration::from_secs(5));
-
-    // let (client, event_loop) = AsyncClient::new(mqttoptions, 10);
-    // client
-    //     .subscribe(COMMAND_TOPIC, QoS::AtMostOnce)
-    //     .await
-    //     .unwrap();
-
-    // let command_task = command_reciever(event_loop);
-
-    // let (tx, rx) = mpsc::channel(32);
-
-    // let percentage = AtomicU8::new(0);
-
-    // tokio::join!(motor_driver_task(rx, close_pin, open_pin),);
-
-    let debounce = None;
-
-    clk.set_async_interrupt(Trigger::Both, debounce, |event| {
-        handle_encoder_interrupt(EncoderPin::CLK, event);
-    })?;
-
-    dt.set_async_interrupt(Trigger::Both, debounce, |event| {
-        handle_encoder_interrupt(EncoderPin::DT, event);
-    })?;
-
-    let stdin = std::io::stdin();
-    loop {
-        // println!("Encoder: {}", get_encoder_count());
-        let mut buffer = String::new();
-        stdin.read_line(&mut buffer)?;
-        let mut split = buffer.as_str().trim().split(char::is_whitespace);
-        let command = split.next().unwrap();
-        match command {
-            "calibrate" => {
-                reset_encoder_count();
-                motor.open();
-                thread::sleep(Duration::from_millis(200));
-                motor.stop();
-                if get_encoder_count() < 0 {
-                    motor.flip_polarity();
-                }
-            }
-            "open" => motor.open(),
-            "close" => motor.close(),
-            "stop" => motor.stop(),
-            "enc" => println!("Encoder: {}", get_encoder_count()),
-            "go" => {
-                let arg: Option<i32> = split.next().map(str::parse).map(Result::ok).flatten();
-                if let Some(desired_pos) = arg {
+    let (tx, mut rx) = channel(128);
+    tokio::spawn(async move {
+        while let Some(command) = rx.recv().await {
+            match command {
+                MotorCommand::Go(desired_pos) => {
                     let enc = get_encoder_count();
                     if desired_pos > enc {
                         motor.open();
@@ -113,9 +52,94 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         motor.stop();
                     }
                 }
+                MotorCommand::Calibrate => {
+                    reset_encoder_count();
+                    motor.open();
+                    thread::sleep(Duration::from_millis(100));
+                    motor.stop();
+                    if get_encoder_count() < 0 {
+                        motor.flip_polarity();
+                    }
+                }
+            }
+        }
+    });
+
+    let mut mqttoptions = MqttOptions::new(CLIENT_ID, HOST, PORT);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    let (client, mut event_loop) = AsyncClient::new(mqttoptions, 10);
+    client
+        .subscribe(COMMAND_TOPIC, QoS::AtMostOnce)
+        .await
+        .unwrap();
+
+    // Receieve
+    {
+        let tx = tx.clone();
+        tokio::task::spawn(async move {
+            while let Ok(notification) = event_loop.poll().await {
+                if let Event::Incoming(packet) = notification {
+                    if let Packet::Publish(publish) = packet {
+                        let bytes = publish.payload.get(0..4).unwrap();
+                        let desired_value = i32::from_le_bytes(bytes.try_into().unwrap());
+                        tx.send(MotorCommand::Go(desired_value)).await.unwrap();
+                    }
+                }
+            }
+        });
+    }
+
+    // Encoder
+    let mut clk = gpio.get(2)?.into_input();
+    let mut dt = gpio.get(3)?.into_input();
+    let debounce = None;
+    clk.set_async_interrupt(Trigger::Both, debounce, |event| {
+        handle_encoder_interrupt(EncoderPin::CLK, event);
+    })?;
+    dt.set_async_interrupt(Trigger::Both, debounce, |event| {
+        handle_encoder_interrupt(EncoderPin::DT, event);
+    })?;
+
+    // Publish
+    let mut last_encoder_state = 0;
+    tokio::spawn(async move {
+        loop {
+            let encoder_state = get_encoder_count();
+            if encoder_state != last_encoder_state {
+                client
+                    .publish(
+                        STATUS_TOPIC,
+                        QoS::AtLeastOnce,
+                        true,
+                        encoder_state.to_le_bytes().to_owned(),
+                    )
+                    .await
+                    .unwrap();
+                last_encoder_state = encoder_state;
+            }
+            sleep(Duration::from_secs(1)).await;
+        }
+    });
+
+    // CLI
+    let stdin = tokio::io::stdin();
+    let mut reader = tokio::io::BufReader::new(stdin).lines();
+    while let Some(line) = reader.next_line().await? {
+        let mut split = line.as_str().trim().split(char::is_whitespace);
+        let command = split.next().unwrap();
+        match command {
+            "calibrate" => {
+                tx.send(MotorCommand::Calibrate).await.unwrap();
+            }
+            "enc" => println!("Encoder: {}", get_encoder_count()),
+            "go" => {
+                let arg: Option<i32> = split.next().map(str::parse).map(Result::ok).flatten();
+                if let Some(desired_pos) = arg {
+                    tx.send(MotorCommand::Go(desired_pos)).await.unwrap();
+                }
             }
             "exit" => break,
-            _ => println!("what"),
+            _ => println!("Unknown command"),
         }
     }
     println!("Exiting...");
