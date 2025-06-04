@@ -80,9 +80,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             while let Ok(notification) = event_loop.poll().await {
                 if let Event::Incoming(packet) = notification {
                     if let Packet::Publish(publish) = packet {
-                        let bytes = publish.payload.get(0..4).unwrap();
-                        let desired_value = i32::from_le_bytes(bytes.try_into().unwrap());
-                        tx.send(MotorCommand::Go(desired_value)).await.unwrap();
+                        dbg!(publish.payload.len());
+                        // let bytes = publish.payload.get(0..3).unwrap();
+                        // let desired_value = i32::from_le_bytes(bytes.try_into().unwrap());
+                        let v: i32 = std::str::from_utf8(&publish.payload)
+                            .unwrap()
+                            .parse()
+                            .unwrap();
+                        tx.send(MotorCommand::Go(v)).await.unwrap();
                     }
                 }
             }
@@ -111,13 +116,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         STATUS_TOPIC,
                         QoS::AtLeastOnce,
                         true,
-                        encoder_state.to_le_bytes().to_owned(),
+                        encoder_state.to_string().into_bytes(),
                     )
                     .await
                     .unwrap();
                 last_encoder_state = encoder_state;
             }
-            sleep(Duration::from_secs(1)).await;
+            sleep(Duration::from_millis(100)).await;
         }
     });
 

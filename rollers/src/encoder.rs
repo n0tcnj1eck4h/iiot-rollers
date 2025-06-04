@@ -25,6 +25,7 @@ static DT_STATE: AtomicBool = AtomicBool::new(false);
 pub fn reset_encoder_count() {
     COUNTER.store(0, Ordering::Relaxed);
 }
+
 pub fn get_encoder_count() -> i32 {
     COUNTER.load(Ordering::Relaxed)
 }
