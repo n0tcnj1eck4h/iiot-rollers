@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     let (client, mut event_loop) = AsyncClient::new(mqttoptions, 10);
     client
-        .subscribe(COMMAND_TOPIC, QoS::AtMostOnce)
+        .subscribe(COMMAND_TOPIC, QoS::AtLeastOnce)
         .await
         .unwrap();
 
@@ -80,9 +80,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             while let Ok(notification) = event_loop.poll().await {
                 if let Event::Incoming(packet) = notification {
                     if let Packet::Publish(publish) = packet {
-                        dbg!(publish.payload.len());
-                        // let bytes = publish.payload.get(0..3).unwrap();
-                        // let desired_value = i32::from_le_bytes(bytes.try_into().unwrap());
                         let v: i32 = std::str::from_utf8(&publish.payload)
                             .unwrap()
                             .parse()

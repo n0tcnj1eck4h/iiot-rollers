@@ -4,12 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = "0.7"
-tokio = { version = "1.0", features = ["full"] }
-rumqttc = "0.24.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tower-http = { version = "0.5", features = ["cors"] }
-log = "0.4"
-env_logger = "0.10"
-thiserror = "1.0"
+anyhow = "1.0.98"
+axum = "0.8.4"
+bincode = "2.0.1"
+rumqttc = { workspace = true }
+serde = { version = "1.0.219", features = ["derive"] }
+sled = "0.34.7"
+tokio = { workspace = true }
