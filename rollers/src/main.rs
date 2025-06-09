@@ -69,10 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut mqttoptions = MqttOptions::new(CLIENT_ID, HOST, PORT);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     let (client, mut event_loop) = AsyncClient::new(mqttoptions, 10);
-    client
-        .subscribe(COMMAND_TOPIC, QoS::AtLeastOnce)
-        .await
-        .unwrap();
+    client.subscribe(COMMAND_TOPIC, QoS::AtLeastOnce).await?;
 
     // Receieve
     {
