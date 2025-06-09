@@ -37,8 +37,8 @@ function renderShutters() {
                     </div>
                     
                     <div class="preset-buttons">
-                        <button class="preset-btn" onclick="setShutterPosition(${shutter.id}, 0)">Zamknij</button>
-                        <button class="preset-btn" onclick="setShutterPosition(${shutter.id}, 100)">Otwórz</button>
+                        <button class="preset-btn" onclick="updateShutterPosition(${shutter.id}, 0, true)">Zamknij</button>
+                        <button class="preset-btn" onclick="updateShutterPosition(${shutter.id}, 100, true)">Otwórz</button>
                     </div>
                     
                 `;
@@ -105,8 +105,8 @@ async function updateShutterVisual(id, position) {
 
     const minHeight = 2;
     const maxHeight = 10;
-    const height =
-      minHeight + (maxHeight - minHeight) * (closedPercentage / 100);
+    const height = minHeight +
+      (maxHeight - minHeight) * (closedPercentage / 100);
     line.style.height = `${height}px`;
 
     const opacity = 0.2 + 0.8 * (closedPercentage / 100);
