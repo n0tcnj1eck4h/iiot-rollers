@@ -9,7 +9,7 @@ difference(){
 translate([0,0, 30 + 8])
 linear_extrude(10)
 difference(){
-    circle(32 / 2);
+    circle(33 / 2);
     circle(30.5 / 2);
 }
 
@@ -17,17 +17,17 @@ difference(){
 translate([0,0,2])
 linear_extrude(6)
 difference(){
-    circle(7 / 2);
-    circle(3.4 / 2 -0.1);
+    circle(5);
+    circle(3.3 + 0.2);
 }
 
 intersection() {
     difference() {
         translate([0,0,8])
-        cylinder(30, 3.5, 16);
+        cylinder(30, 5, 16.5);
         
         translate([0,0,7])
-        cylinder(32, 1.3, 15.8);
+        cylinder(32, 3.2, 15.8);
     }
     
     union(){
