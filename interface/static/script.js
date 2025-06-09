@@ -1,3 +1,6 @@
+const myHeaders = new Headers();
+myHeaders.append("Content-Type", "application/json");
+
 let shutters = [];
 
 function renderShutters() {
@@ -29,7 +32,8 @@ function renderShutters() {
                     <div class="slider-container">
                         <input type="range" min="0" max="100" value="${shutter.position}" 
                             class="slider" id="slider-${shutter.id}" 
-                            oninput="updateShutterPosition(${shutter.id}, this.value)">
+                            onmouseup="updateShutterPosition(${shutter.id}, this.value, true)"
+                            onmousedown="ignore.add(${shutter.id})">
                     </div>
                     
                     <div class="preset-buttons">
@@ -43,18 +47,39 @@ function renderShutters() {
   });
 }
 
-function updateShutterPosition(id, position) {
+const ignore = new Set();
+async function updateShutterPosition(id, position, update) {
   const shutter = shutters.find((s) => s.id === id);
   shutter.position = position;
-  document.querySelector(`#slider-${id}`).value = position;
-  document.querySelector(
-    `#visual-${id}`,
-  ).parentNode.nextElementSibling.textContent = `${position}%`;
-  updateShutterVisual(id, position);
+  // document.querySelector(`#slider-${id}`).value = position;
+  if (!update) {
+    document.querySelector(
+      `#visual-${id}`,
+    ).parentNode.nextElementSibling.textContent = `${position}%`;
+    updateShutterVisual(id, position);
+  }
+
+  if (update) {
+    ignore.add(id);
+    setTimeout(() => {
+      ignore.delete(id);
+    }, 5000);
+
+    const req = {
+      id: id,
+      position: parseInt(position),
+    };
+
+    await fetch("/shutters", {
+      method: "PUT",
+      body: JSON.stringify(req),
+      headers: myHeaders,
+    });
+  }
 }
 
 // Set shutter position (with apply button)
-function setShutterPosition(id, position) {
+async function setShutterPosition(id, position) {
   const shutter = shutters.find((s) => s.id === id);
   if (shutter) {
     shutter.position = parseInt(position);
@@ -62,7 +87,7 @@ function setShutterPosition(id, position) {
   }
 }
 
-function updateShutterVisual(id, position) {
+async function updateShutterVisual(id, position) {
   const visual = document.getElementById(`visual-${id}`);
   if (!visual) return;
 
@@ -91,10 +116,16 @@ function updateShutterVisual(id, position) {
   }
 }
 
-function deleteShutter(id) {
+async function deleteShutter(id) {
   if (confirm("Are you sure you want to remove this shutter?")) {
-    shutters = shutters.filter((shutter) => shutter.id !== id);
-    renderShutters();
+    await fetch("/shutters", {
+      method: "DELETE",
+      body: JSON.stringify({ id: id }),
+      headers: myHeaders,
+    });
+    window.location.reload();
+    // shutters = shutters.filter((shutter) => shutter.id !== id);
+    // renderShutters();
   }
 }
 
@@ -113,8 +144,6 @@ document
       command_topic,
     };
 
-    const myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
     await fetch("/shutters", {
       method: "POST",
       body: JSON.stringify(shutter),
@@ -133,4 +162,13 @@ window.onload = async function () {
   const res = await fetch("/shutters");
   shutters = await res.json();
   renderShutters();
+
+  setInterval(async () => {
+    const res = await fetch("/shutters");
+    shutters = await res.json();
+    for (const shutter of shutters) {
+      await updateShutterPosition(shutter.id, shutter.position, false);
+    }
+    // renderShutters();
+  }, 100);
 };

@@ -6,13 +6,15 @@ use axum::{
     Json, Router,
     extract::State,
     http::{StatusCode, header},
-    response::{Html, IntoResponse, Redirect},
+    response::{Html, IntoResponse},
     routing::{delete, get, post, put},
 };
 use bincode::{Decode, Encode};
-use rumqttc::{AsyncClient, MqttOptions, QoS};
+use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+
+use crate::db::Database;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -37,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Serialize, Deserialize)]
 struct ShutterState {
     id: u64,
-    percentage: i32,
+    position: i32,
 }
 
 #[derive(Deserialize)]
@@ -82,8 +84,14 @@ async fn add_shutter(
         status_topic: payload.status_topic,
         position: 100,
     };
+
+    let client = app.client.lock().await;
+    client
+        .subscribe(&shutter.status_topic, QoS::AtLeastOnce)
+        .await
+        .unwrap();
+
     app.db.insert_shutter(shutter).unwrap();
-    // Redirect::temporary("/")
     StatusCode::OK
 }
 
@@ -103,7 +111,7 @@ async fn set_shutter(
             &shutter.command_topic,
             QoS::AtLeastOnce,
             false,
-            payload.percentage.to_le_bytes(),
+            payload.position.to_string().as_bytes(),
         )
         .await
         .unwrap();
@@ -114,15 +122,15 @@ async fn delete_shutter(
     State(app): State<AppState>,
     Json(payload): Json<DeleteShutterRequest>,
 ) -> impl IntoResponse {
+    let shutter = app.db.get_shutter(payload.id).unwrap().unwrap();
+    let client = app.client.lock().await;
+    client.unsubscribe(shutter.status_topic).await.unwrap();
     app.db.remove_shutter(payload.id).unwrap();
     StatusCode::OK
 }
 
-const COMMAND_TOPIC: &str = "shutters/desired";
-const STATUS_TOPIC: &str = "shutters/status";
-
-const CLIENT_ID: &str = "apparatus";
-const HOST: &str = "localhost";
+const CLIENT_ID: &str = "interface";
+const HOST: &str = "192.168.0.10";
 const PORT: u16 = 1883;
 
 #[derive(Encode, Decode, Debug, Serialize)]
@@ -146,18 +154,25 @@ impl AppState {
         mqttoptions.set_keep_alive(Duration::from_secs(5));
 
         let (client, mut event_loop) = AsyncClient::new(mqttoptions, 64);
-        client.subscribe(STATUS_TOPIC, QoS::AtLeastOnce).await?;
 
         let kv = Arc::new(db::Database::new());
         {
             let kv = kv.clone();
             tokio::task::spawn(async move {
+                println!("MQTT event loop starting...");
                 while let Ok(notification) = event_loop.poll().await {
-                    // if let Err(err) = handle_mqtt_notification(&kv, notification) {
-                    //     eprintln!("Error handling MQTT notification: {}", err);
-                    // }
+                    if let Err(err) = handle_mqtt_notification(&kv, notification) {
+                        eprintln!("Error handling MQTT notification: {}", err);
+                    }
                 }
+                println!("MQTT event loop shutting down...");
             });
+        }
+
+        for shutter in kv.iter_shutters() {
+            client
+                .subscribe(shutter.status_topic, QoS::AtLeastOnce)
+                .await?;
         }
 
         Ok(Self {
@@ -167,19 +182,19 @@ impl AppState {
     }
 }
 
-// fn handle_mqtt_notification(kv: &Database, notification: Event) -> anyhow::Result<()> {
-//     if let Event::Incoming(packet) = notification {
-//         if let Packet::Publish(publish) = packet {
-//             let topic = publish.topic;
-//             let v: i32 = std::str::from_utf8(&publish.payload)
-//                 .unwrap()
-//                 .parse()
-//                 .unwrap();
+fn handle_mqtt_notification(kv: &Database, notification: Event) -> anyhow::Result<()> {
+    if let Event::Incoming(packet) = notification {
+        if let Packet::Publish(publish) = packet {
+            let topic = publish.topic;
+            let v: i32 = std::str::from_utf8(&publish.payload)
+                .unwrap()
+                .parse()
+                .unwrap();
 
-//             let id = status_topic_to_id_lookup.get(&topic).unwrap();
-//             let mut shutter = shutters.get_mut(&id).unwrap();
-//             shutter.percentage = v;
-//         }
-//     }
-//     Ok(())
-// }
+            let mut shutter = kv.get_shutter_by_status_topic(&topic).unwrap();
+            shutter.position = v;
+            kv.insert_shutter(shutter)?;
+        }
+    }
+    Ok(())
+}

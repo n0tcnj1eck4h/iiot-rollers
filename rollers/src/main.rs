@@ -13,7 +13,7 @@ use crate::{
     motor::Motor,
 };
 
-const COMMAND_TOPIC: &str = "shutters/desired";
+const COMMAND_TOPIC: &str = "shutters/command";
 const STATUS_TOPIC: &str = "shutters/status";
 
 const CLIENT_ID: &str = "apparatus";
@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         while let Some(command) = rx.recv().await {
             match command {
                 MotorCommand::Go(desired_pos) => {
+                    let desired_pos = desired_pos * 10;
                     let enc = get_encoder_count();
                     if desired_pos > enc {
                         motor.open();
@@ -113,7 +114,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         STATUS_TOPIC,
                         QoS::AtLeastOnce,
                         true,
-                        encoder_state.to_string().into_bytes(),
+                        (encoder_state / 10).to_string().into_bytes(),
                     )
                     .await
                     .unwrap();
@@ -122,6 +123,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             sleep(Duration::from_millis(100)).await;
         }
     });
+
+    tx.send(MotorCommand::Calibrate).await.unwrap();
 
     // CLI
     let stdin = tokio::io::stdin();
