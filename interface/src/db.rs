@@ -21,15 +21,6 @@ impl Database {
         [*b"shutter_", id.to_be_bytes()].concat().into()
     }
 
-    // fn lookup_key(topic: &str) -> IVec {
-    //     let prefix = "lookup_";
-    //     let mut vec = Vec::with_capacity(prefix.len() + topic.len());
-    //     vec.extend_from_slice(prefix.as_bytes());
-    //     vec.extend_from_slice(topic.as_bytes());
-    //     vec.into()
-    //     // [*b"lookup_", topic.as_bytes()].concat().into()
-    // }
-
     pub fn generate_id(&self) -> u64 {
         self.kv.generate_id().unwrap() as u64
     }
